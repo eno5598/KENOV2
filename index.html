@@ -306,6 +306,8 @@
           <option value="pi">Pi‑Ziffern</option>
           <option value="fib">Fibonacci</option>
           <option value="prime">Primzahl</option>
+          <option value="fac">Fakultät</option>
+          <option value="lucas">Lucas</option>
         </select>
         <div class="hint">Mathematische Basis für den automatisch erzeugten Seed</div>
       </div>
@@ -372,7 +374,19 @@
   <div class="panel" id="p-stats" style="border-left:6px solid var(--accent2)">
     <div class="ph"><span class="emoji">📊</span><h2 style="margin:0">Statistik</h2></div>
     <div class="row">
-      <div><button id="calcStats" class="secondary">Statistik berechnen</button></div>
+      <div>
+        <button id="calcStats" class="secondary">Statistik berechnen</button>
+      </div>
+      <div>
+        <label>Ziehungsfenster</label>
+        <select id="statsWindow">
+          <option value="all" selected>Alle</option>
+          <option value="15">Letzte&nbsp;15</option>
+          <option value="50">Letzte&nbsp;50</option>
+          <option value="100">Letzte&nbsp;100</option>
+        </select>
+        <div class="hint">Fenstergröße der letzten Ziehungen</div>
+      </div>
     </div>
     <div id="statsInfo" class="status" style="display:none;margin-top:6px"></div>
     <!-- Statt einer Balkengrafik wird hier eine Top-Liste angezeigt -->
@@ -1157,18 +1171,32 @@ function togglePatternBox(){
   function showStats(){
     if(!g_draws.length){ alert('Bitte zuerst Archiv laden.'); return; }
     const A=+$("#rangeFrom").value, B=+$("#rangeTo").value;
-    const freq=computeFrequency(A,B);
-    const maxFreq=Math.max(...freq, 1);
+    // Wähle das Fenster der letzten Ziehungen entsprechend der Auswahl im Dropdown
+    const winSelEl = document.getElementById('statsWindow');
+    const winVal = winSelEl ? (winSelEl.value || 'all') : 'all';
+    let drawsSubset;
+    if(winVal === 'all' || !winVal){
+      drawsSubset = g_draws.slice();
+    } else {
+      const nWin = parseInt(winVal, 10) || g_draws.length;
+      drawsSubset = g_draws.slice(-nWin);
+    }
+    // Berechne Häufigkeit der Zahlen im gewählten Bereich für das ausgewählte Ziehungsfenster
+    const freq = Array(B - A + 1).fill(0);
+    for(const d of drawsSubset){
+      for(const v of d){
+        if(v >= A && v <= B){ freq[v - A]++; }
+      }
+    }
     const info=[];
-    info.push(`Ziehungen: ${g_draws.length}`);
+    info.push(`Ziehungen (Fenster): ${drawsSubset.length}`);
     info.push(`Ziehungsgröße: ${g_drawSize}`);
     info.push(`Bereich: ${A}-${B}`);
     $("#statsInfo").innerHTML = info.join('<br>');
     $("#statsInfo").style.display="";
-    // Statistikliste: Top-Zahlen und Top-Paare mit Balkenvisualisierung
     const listEl = $("#statsList");
     listEl.innerHTML = '';
-    // Berechne Top-Zahlen sortiert nach Häufigkeit
+    // Berechne Top-Zahlen sortiert nach Häufigkeit im Fenster
     const entries = freq.map((count,i) => ({ num: A + i, count })).filter(e => e.count > 0);
     entries.sort((a,b) => b.count - a.count || a.num - b.num);
     const topNums = entries.slice(0, Math.min(12, entries.length));
@@ -1196,27 +1224,6 @@ function togglePatternBox(){
       numContainer.appendChild(item);
     });
     listEl.appendChild(numContainer);
-    // Top-Paare
-    const pairContainer = document.createElement('div');
-    pairContainer.style.marginTop = '12px';
-    pairContainer.innerHTML = '<b>Top-Paare:</b>';
-    const topPairs = computeTopPairsRange(A,B, 5);
-    topPairs.forEach(it => {
-      const p = document.createElement('div');
-      p.className = 'stat-item';
-      const pairSpan = document.createElement('span');
-      pairSpan.className = 'stat-num';
-      pairSpan.style.width = '60px';
-      pairSpan.textContent = it.pair.join('-');
-      const cnt = document.createElement('span');
-      cnt.className = 'stat-count';
-      cnt.style.marginLeft = '4px';
-      cnt.textContent = it.count + '×';
-      p.appendChild(pairSpan);
-      p.appendChild(cnt);
-      pairContainer.appendChild(p);
-    });
-    listEl.appendChild(pairContainer);
     listEl.style.display = '';
   }
   $("#calcStats").addEventListener('click', showStats);
@@ -2213,6 +2220,42 @@ function togglePatternBox(){
           }
         }
         seedStr = prime.toString();
+      } else if(formula === 'fac'){
+        // Fakultäts‑Seed: wähle eine zufällige Zahl und bilde deren Fakultät (n!).
+        let n = 6;
+        if(window.crypto && crypto.getRandomValues){
+          const tmp = new Uint32Array(1);
+          crypto.getRandomValues(tmp);
+          // N zwischen 5 und 10
+          n = 5 + (tmp[0] % 6);
+        } else {
+          n = 5 + Math.floor(Math.random() * 6);
+        }
+        let res = 1n;
+        for(let i=2n; i<=BigInt(n); i++) res *= i;
+        seedStr = res.toString();
+      } else if(formula === 'lucas'){
+        // Lucas‑Zahlen: wähle eine Position und berechne die entsprechende Lucas‑Zahl.
+        let n = 12;
+        if(window.crypto && crypto.getRandomValues){
+          const tmp = new Uint32Array(1);
+          crypto.getRandomValues(tmp);
+          // N zwischen 10 und 30
+          n = 10 + (tmp[0] % 21);
+        } else {
+          n = 10 + Math.floor(Math.random() * 21);
+        }
+        let a = 2n, b = 1n;
+        if(n === 0){ seedStr = '2'; }
+        else if(n === 1){ seedStr = '1'; }
+        else {
+          for(let i=2; i<=n; i++){
+            const t = a + b;
+            a = b;
+            b = t;
+          }
+          seedStr = b.toString();
+        }
       } else {
         // Standard: Verwende crypto.getRandomValues für einen 64‑Bit‑Seed, fallback auf Math.random
         if(window.crypto && crypto.getRandomValues){
